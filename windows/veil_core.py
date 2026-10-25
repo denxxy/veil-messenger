@@ -24,6 +24,7 @@ import base64
 import json
 import os
 import random
+import ssl
 import sys
 import threading
 import time
@@ -38,6 +39,16 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import (
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.serialization import (
     Encoding, NoEncryption, PrivateFormat, PublicFormat)
+
+try:
+    import certifi
+    # CA-бандл certifi спасает там, где системного хранилища у python нет
+    # (python.org-сборки на macOS/Windows без шага «Install Certificates»)
+    _CA_FILE = certifi.where()
+    _SSL_CTX = ssl.create_default_context(cafile=_CA_FILE)
+except ImportError:
+    _CA_FILE = None
+    _SSL_CTX = None
 
 try:
     import websocket  # websocket-client
@@ -350,7 +361,8 @@ class RelayTransport:
             url, data=body, method="POST",
             headers={"Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=RelayTransport.TIMEOUT) as r:
+            with urllib.request.urlopen(req, timeout=RelayTransport.TIMEOUT,
+                                        context=_SSL_CTX) as r:
                 return 200 <= r.status < 300
         except (urllib.error.URLError, OSError, ValueError):
             return False
@@ -362,7 +374,8 @@ class RelayTransport:
         req = urllib.request.Request(url, method="GET",
                                      headers=auth_headers(identity, "inbox"))
         try:
-            with urllib.request.urlopen(req, timeout=RelayTransport.TIMEOUT) as r:
+            with urllib.request.urlopen(req, timeout=RelayTransport.TIMEOUT,
+                                        context=_SSL_CTX) as r:
                 return json.loads(r.read().decode("utf-8")).get("envelopes", [])
         except (urllib.error.URLError, OSError, ValueError):
             return None
@@ -372,7 +385,7 @@ class RelayTransport:
         url = normalize_base(base) + "/health"
         req = urllib.request.Request(url, method="GET")
         try:
-            with urllib.request.urlopen(req, timeout=8) as r:
+            with urllib.request.urlopen(req, timeout=8, context=_SSL_CTX) as r:
                 return r.status == 200
         except (urllib.error.URLError, OSError):
             return False
@@ -595,7 +608,12 @@ class VeilClientCore:
             return
         while not self._stop.is_set():
             try:
-                ws = websocket.create_connection(url, timeout=10)
+                sslopt = None
+                if url.startswith("wss://"):
+                    sslopt = ({"cert_reqs": ssl.CERT_REQUIRED, "ca_certs": _CA_FILE}
+                              if _CA_FILE
+                              else {"cert_reqs": ssl.CERT_REQUIRED})
+                ws = websocket.create_connection(url, timeout=10, sslopt=sslopt)
                 ws.settimeout(10)
                 ts = int(time.time())
                 nonce = os.urandom(8).hex()
