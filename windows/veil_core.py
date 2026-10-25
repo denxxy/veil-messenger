@@ -310,7 +310,8 @@ class ClientState:
             return False
         existing = self.contact(s)
         if existing:
-            if not existing.get("relays") and inv.get("r"):
+            # повторное приглашение обновляет relay-адреса контакта
+            if inv.get("r") and existing.get("relays") != inv["r"]:
                 existing["relays"] = inv["r"]
             self.save()
             return True
@@ -489,13 +490,17 @@ class VeilClientCore:
         self.state.save()
         self._emit("message", to_sign_pub)
 
-        targets = ([normalize_base(u) for u in contact["relays"]]
-                   if contact and contact.get("relays")
-                   else self.state.enabled_relay_urls())
-        if not targets:
+        # сначала relay-адреса контакта, при неудаче — свои (защита от
+        # устаревших адресов в старых приглашениях)
+        mine = self.state.enabled_relay_urls()
+        primary = ([normalize_base(u) for u in contact["relays"]]
+                   if contact and contact.get("relays") else mine)
+        if not primary and not mine:
             self._emit("error", "Не настроен ни один relay — добавьте его в настройках")
             return False
-        delivered = any(RelayTransport.post_envelope(b, envelope) for b in targets)
+        delivered = any(RelayTransport.post_envelope(b, envelope) for b in primary)
+        if not delivered and mine and mine != primary:
+            delivered = any(RelayTransport.post_envelope(b, envelope) for b in mine)
         self._mark_delivery(msg_id, delivered)
         return delivered
 
@@ -565,8 +570,11 @@ class VeilClientCore:
             else:
                 if contact["xPub"] != sender_x:
                     contact["xPub"] = sender_x
-                if not contact.get("relays") and inner.get("r"):
-                    contact["relays"] = inner["r"]
+                # актуальный список relay отправителя перезаписывает
+                # устаревший адрес из старого приглашения
+                fresh = [normalize_base(u) for u in inner.get("r", [])]
+                if fresh and contact.get("relays") != fresh:
+                    contact["relays"] = fresh
                 contact["lastMessageAt"] = inner.get("ts")
 
         self.state.data["messages"].append({

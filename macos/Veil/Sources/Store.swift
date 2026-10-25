@@ -110,11 +110,11 @@ final class AppStore: ObservableObject {
 
     func addContact(_ invite: InvitePayload) -> Bool {
         guard let myPub = identity?.signPubHex, invite.s != myPub else { return false }
-        guard contacts.first(where: { $0.signPub == invite.s }) == nil else {
-            // контакт уже есть — обновим relay-адреса, если старые пусты
-            if let idx = contacts.firstIndex(where: { $0.signPub == invite.s }),
-               contacts[idx].relays.isEmpty, !invite.r.isEmpty {
-                contacts[idx].relays = invite.r
+        let freshRelays = invite.r.map { RelayService.normalizeBase($0) }
+        if let idx = contacts.firstIndex(where: { $0.signPub == invite.s }) {
+            // контакт уже есть — обновляем relay-адреса свежим приглашением
+            if !freshRelays.isEmpty, contacts[idx].relays != freshRelays {
+                contacts[idx].relays = freshRelays
             }
             return true
         }
@@ -180,15 +180,6 @@ final class AppStore: ObservableObject {
         let innerId = UUID().uuidString
         let ts = Date().timeIntervalSince1970 * 1000
 
-        // адресуем на relay контакта; если их нет — на свои (в т.ч. для «Избранного»)
-        let contactRelays = contact(contactId)?.relays ?? []
-        let targets = contactId == identity.signPubHex || contactRelays.isEmpty
-            ? enabledRelayURLs : contactRelays
-        guard !targets.isEmpty else {
-            lastError = "Не настроен ни один relay — добавьте его в разделе «Реле»"
-            return
-        }
-
         let inner = MessageInner(i: innerId, t: trimmed, ts: ts, r: enabledRelayURLs)
         guard let envelope = buildEnvelope(inner: inner, to: contactId) else {
             lastError = "Не удалось зашифровать сообщение"
@@ -196,9 +187,28 @@ final class AppStore: ObservableObject {
         }
         messages.append(StoredMessage(id: UUID(), contactId: contactId, incoming: false,
                                       text: trimmed, ts: ts, delivered: false, remoteId: innerId))
+        deliverWithFallback(envelope: envelope, remoteId: innerId, contactId: contactId)
+    }
+
+    /// Доставка с запасным путём: сначала relay-адреса контакта (из его
+    /// приглашения/последнего сообщения), при неудаче — мои собственные.
+    /// Спасает от устаревших адресов: получатель опрашивает свои relay,
+    /// и конверт до него доходит, даже если старый адрес контакта умер.
+    private func deliverWithFallback(envelope: OutgoingEnvelope, remoteId: String, contactId: String) {
+        let mine = enabledRelayURLs
+        let contactRelays = contact(contactId)?.relays ?? []
+        let primary = (contactId == identity?.signPubHex || contactRelays.isEmpty)
+            ? mine : contactRelays.map { RelayService.normalizeBase($0) }
+        guard !primary.isEmpty || !mine.isEmpty else {
+            lastError = "Не настроен ни один relay — добавьте его в разделе «Реле»"
+            return
+        }
         Task { [weak self] in
-            let ok = await RelayService.shared.deliver(envelope: envelope, to: targets)
-            await MainActor.run { self?.markDelivery(remoteId: innerId, delivered: ok) }
+            var ok = await RelayService.shared.deliver(envelope: envelope, to: primary)
+            if !ok, !mine.isEmpty, mine != primary {
+                ok = await RelayService.shared.deliver(envelope: envelope, to: mine)
+            }
+            await MainActor.run { self?.markDelivery(remoteId: remoteId, delivered: ok) }
         }
     }
 
@@ -236,14 +246,7 @@ final class AppStore: ObservableObject {
             let inner = MessageInner(i: msg.remoteId, t: msg.text, ts: msg.ts,
                                      r: enabledRelayURLs)
             guard let envelope = buildEnvelope(inner: inner, to: msg.contactId) else { continue }
-            let contactRelays = contact(msg.contactId)?.relays ?? []
-            let targets = msg.contactId == identity.signPubHex || contactRelays.isEmpty
-                ? enabledRelayURLs : contactRelays
-            guard !targets.isEmpty else { continue }
-            Task { [weak self] in
-                let ok = await RelayService.shared.deliver(envelope: envelope, to: targets)
-                await MainActor.run { self?.markDelivery(remoteId: msg.remoteId, delivered: ok) }
-            }
+            deliverWithFallback(envelope: envelope, remoteId: msg.remoteId, contactId: msg.contactId)
         }
     }
 
@@ -279,11 +282,16 @@ final class AppStore: ObservableObject {
             return
         }
 
-        // 4. Неизвестный отправитель -> авто-контакт (relay-адреса берём из сообщения).
+        // 4. Неизвестный отправитель -> авто-контакт; известный ->
+        //    обновляем relay-адреса актуальным списком отправителя из inner.r
+        //    (адрес в приглашении мог устареть или умереть).
         if !isSelf {
             if let idx = contacts.firstIndex(where: { $0.signPub == env.sender }) {
                 if contacts[idx].xPub != env.senderX { contacts[idx].xPub = env.senderX }
-                if contacts[idx].relays.isEmpty, !inner.r.isEmpty { contacts[idx].relays = inner.r }
+                let fresh = inner.r.map { RelayService.normalizeBase($0) }
+                if !fresh.isEmpty, contacts[idx].relays != fresh {
+                    contacts[idx].relays = fresh
+                }
             } else {
                 contacts.append(Contact(signPub: env.sender,
                                         name: "Неизвестный · " + String(env.sender.prefix(8)),
