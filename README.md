@@ -70,6 +70,8 @@ relay/deploy/veil-relay.service        юнит с hardening
 relay/deploy/Caddyfile                HTTPS через Caddy (Let's Encrypt)
 macos/Veil/Sources/        SwiftUI-приложение (без внешних зависимостей)
 macos/build.sh             сборка Veil.app без Xcode-проекта
+ios/VeilIOS.xcodeproj      iPhone-приложение (общее ядро с macOS, XcodeGen)
+ios/build_check.sh         проверка iOS-UI без Xcode (компиляция на macOS)
 windows/veil_core.py       ядро Windows/Linux-клиента: криптография+транспорт
 windows/veil_client.py     tkinter-GUI (русский интерфейс)
 windows/run_windows.bat    запуск на Windows в один двойной щелчок
@@ -217,6 +219,14 @@ open macos/Veil.app
 «Импортировать…» в профиле принимает бэкап из Veil.app — и наоборот).
 Подробности: `windows/README.md`.
 
+### iPhone-клиент
+
+Проект `ios/VeilIOS.xcodeproj` (iOS 16+, ядро общее с macOS-приложением).
+Откройте в Xcode на любом Mac, укажите свой Apple ID в Signing и нажмите
+Run с подключённым iPhone. Без Xcode UI-код проверяется запуском
+`bash ios/build_check.sh`. Подробности и ограничения фонового режима —
+`ios/README.md`.
+
 ### Тесты
 
 ```bash
@@ -226,6 +236,7 @@ open macos/Veil.app
 bash tests/interop/run.sh                      # Swift ↔ Python криптография
 .venv/bin/python windows/veil_core.py --selftest  # ядро python-клиента: 12
 macos/Veil.app/Contents/MacOS/Veil --selftest  # самопроверка Swift: 14
+bash ios/build_check.sh                        # кросс-проверка iOS-UI
 ```
 
 ## Модель угроз

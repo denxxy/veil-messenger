@@ -28,8 +28,12 @@ final class AppStore: ObservableObject {
     private var bootstrapped = false
 
     init() {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory,
-                                           in: .userDomainMask)[0]
+        // VEIL_HOME позволяет держать отдельный каталог состояния
+        // (несколько копий клиента на одной машине, тесты, проверка сборки iOS-UI)
+        let dir = ProcessInfo.processInfo.environment["VEIL_HOME"].map {
+            URL(fileURLWithPath: $0, isDirectory: true)
+        } ?? FileManager.default.urls(for: .applicationSupportDirectory,
+                                      in: .userDomainMask)[0]
             .appendingPathComponent("Veil", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         stateURL = dir.appendingPathComponent("store.json")
@@ -176,7 +180,7 @@ final class AppStore: ObservableObject {
 
     func sendMessage(_ text: String, to contactId: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let identity else { return }
+        guard !trimmed.isEmpty, identity != nil else { return }
         let innerId = UUID().uuidString
         let ts = Date().timeIntervalSince1970 * 1000
 

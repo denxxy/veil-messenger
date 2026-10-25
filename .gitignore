@@ -15,3 +15,6 @@ macos/Veil.app
 tests/interop/vector.json
 tests/interop/reply.json
 /veil_interop_test
+
+# ios build check artifacts
+build/ioscheck/

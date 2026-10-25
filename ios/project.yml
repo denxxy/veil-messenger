@@ -1,0 +1,29 @@
+name: VeilIOS
+options:
+  bundleIdPrefix: chat.veil
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+targets:
+  VeilIOS:
+    type: application
+    platform: iOS
+    sources:
+      - path: VeilIOS
+      # общий протокол/ядро — те же файлы, что в macOS-приложении
+      - path: ../macos/Veil/Sources/Crypto.swift
+      - path: ../macos/Veil/Sources/Models.swift
+      - path: ../macos/Veil/Sources/Store.swift
+      - path: ../macos/Veil/Sources/RelayService.swift
+    settings:
+      base:
+        PRODUCT_NAME: Veil
+        PRODUCT_BUNDLE_IDENTIFIER: chat.veil.ios
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+        INFOPLIST_FILE: VeilIOS/Info.plist
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
