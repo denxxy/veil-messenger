@@ -1,0 +1,38 @@
+[Unit]
+Description=Veil relay node (store-and-forward, E2E-encrypted)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=veilrelay
+Group=veilrelay
+WorkingDirectory=/opt/veil-relay
+# Строку аргументов подставляет install.sh (placeholder __VEIL_ARGS__):
+# по умолчанию --host 0.0.0.0 --port 8080 (внешний IP), при указании
+# VEIL_TLS_CERT/VEIL_TLS_KEY добавляется TLS, при VEIL_LOCAL=1 привязка
+# 127.0.0.1 (режим «за реверс-прокси Caddy/nginx»).
+ExecStart=/opt/veil-relay/venv/bin/python /opt/veil-relay/veil_relay.py __VEIL_ARGS__
+Restart=always
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/veil-relay
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+MemoryDenyWriteExecute=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+veil_relay.db
+veil_relay.db-*
+
+# macOS app build artifacts
+macos/build/
+build/
+macos/Veil.app
+*.DS_Store
+
+# test artifacts
+tests/interop/vector.json
+tests/interop/reply.json
+/veil_interop_test
