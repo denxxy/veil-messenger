@@ -17,6 +17,106 @@ import veil_core as core
 APP_TITLE = "Veil — мессенджер, устойчивый к блокировкам"
 
 
+# ------------------------------------------------- буфер обмена и вставка
+# В tkinter нет контекстного меню у полей ввода, а Ctrl+V местами не работает
+# (зависит от раскладки/сборки). Явно вешаем и клавиши, и меню правой кнопки.
+
+def _is_entry(w):
+    return isinstance(w, (tk.Entry, ttk.Entry))
+
+
+def _selection(w):
+    if _is_entry(w):
+        return w.selection_get() if w.selection_present() else ""
+    try:
+        return w.get("sel.first", "sel.last")
+    except tk.TclError:
+        return ""
+
+
+def _delete_selection(w):
+    try:
+        w.delete("sel.first", "sel.last")
+    except tk.TclError:
+        pass
+
+
+def _select_all(w):
+    if _is_entry(w):
+        w.select_range(0, tk.END)
+    else:
+        w.tag_remove("sel", "1.0", tk.END)
+        w.tag_add("sel", "1.0", "end-1c")
+    w.focus_set()
+
+
+def _act_copy(w):
+    s = _selection(w)
+    if s:
+        w.clipboard_clear()
+        w.clipboard_append(s)
+    return "break"
+
+
+def _act_cut(w):
+    if _selection(w):
+        w.clipboard_clear()
+        w.clipboard_append(_selection(w))
+        _delete_selection(w)
+    return "break"
+
+
+def _act_paste(w):
+    try:
+        text = w.clipboard_get()
+    except tk.TclError:
+        return "break"
+    _delete_selection(w)
+    if not _is_entry(w) and str(w.cget("state")) == "disabled":
+        return "break"
+    w.insert("insert", text)
+    return "break"
+
+
+def install_edit_menu(widget, readonly=False):
+    """Меню правой кнопки + горячие клавиши работы с буфером.
+
+    readonly=True — для полей только для чтения (меню только копирует).
+    """
+    if readonly:
+        menu = tk.Menu(widget, tearoff=0)
+        menu.add_command(label="Копировать выделенное",
+                         command=lambda: _act_copy(widget))
+        menu.add_command(label="Копировать всё",
+                         command=lambda: (_select_all(widget), _act_copy(widget)))
+    else:
+        menu = tk.Menu(widget, tearoff=0)
+        menu.add_command(label="Вырезать", command=lambda: _act_cut(widget))
+        menu.add_command(label="Копировать", command=lambda: _act_copy(widget))
+        menu.add_command(label="Вставить", command=lambda: _act_paste(widget))
+        menu.add_separator()
+        menu.add_command(label="Выделить всё", command=lambda: _select_all(widget))
+        for seq in ("<Control-v>", "<Control-V>", "<Shift-Insert>"):
+            widget.bind(seq, lambda e, w=widget: _act_paste(w))
+        for seq in ("<Control-c>", "<Control-C>", "<Control-Insert>"):
+            widget.bind(seq, lambda e, w=widget: _act_copy(w))
+        for seq in ("<Control-x>", "<Control-X>"):
+            widget.bind(seq, lambda e, w=widget: _act_cut(w))
+        for seq in ("<Control-a>", "<Control-A>"):
+            widget.bind(seq, lambda e, w=widget: _select_all(w) or "break")
+
+    def popup(event):
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    # Windows: правая кнопка = Button-3; на macOS некоторые мыши = Button-2
+    widget.bind("<Button-3>", popup)
+    widget.bind("<Button-2>", popup)
+    return widget
+
+
 class VeilApp(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -83,9 +183,11 @@ class VeilApp(tk.Tk):
                                     spacing1=2, spacing3=6)
         self.messages.tag_configure("body_out", justify=tk.RIGHT, rmargin=8,
                                     spacing1=2, spacing3=6)
+        install_edit_menu(self.messages, readonly=True)
         input_row = ttk.Frame(right)
         input_row.pack(fill=tk.X, padx=8, pady=(0, 8))
         self.input = ttk.Entry(input_row, font=("", 11))
+        install_edit_menu(self.input)
         self.input.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=4)
         self.input.bind("<Return>", lambda e: self._send())
         ttk.Button(input_row, text="Отправить ▶",
@@ -220,7 +322,7 @@ class VeilApp(tk.Tk):
                   justify=tk.CENTER).pack(pady=12)
         name_var = tk.StringVar()
         ttk.Label(win, text="Ваше имя:").pack()
-        ttk.Entry(win, textvariable=name_var, width=30).pack(pady=4)
+        install_edit_menu(ttk.Entry(win, textvariable=name_var, width=30)).pack(pady=4)
 
         def create():
             identity = core.VeilIdentity.generate()
@@ -239,7 +341,7 @@ class VeilApp(tk.Tk):
         win = self._modal("Мой профиль", 560, 420)
         ttk.Label(win, text="Имя:").pack(anchor=tk.W, padx=10)
         name_var = tk.StringVar(value=self.state.data.get("profileName", ""))
-        name_entry = ttk.Entry(win, textvariable=name_var)
+        name_entry = install_edit_menu(ttk.Entry(win, textvariable=name_var))
         name_entry.pack(fill=tk.X, padx=10)
 
         def save_name(*_):
@@ -259,6 +361,7 @@ class VeilApp(tk.Tk):
                                         font=("Courier", 8))
         box.insert("1.0", invite)
         box.configure(state=tk.DISABLED)
+        install_edit_menu(box, readonly=True)
         box.pack(fill=tk.BOTH, expand=True, padx=10)
 
         def copy_invite():
@@ -310,6 +413,7 @@ class VeilApp(tk.Tk):
                                                               pady=(8, 2))
         box = scrolledtext.ScrolledText(win, height=6, wrap=tk.CHAR,
                                         font=("Courier", 8))
+        install_edit_menu(box)
         box.pack(fill=tk.BOTH, expand=True, padx=10)
         preview = ttk.Label(win, text="", foreground="#0066cc")
         preview.pack(anchor=tk.W, padx=10)
@@ -353,7 +457,7 @@ class VeilApp(tk.Tk):
         entry_row = ttk.Frame(win)
         entry_row.pack(fill=tk.X, padx=10, pady=6)
         url_var = tk.StringVar()
-        ttk.Entry(entry_row, textvariable=url_var).pack(
+        install_edit_menu(ttk.Entry(entry_row, textvariable=url_var)).pack(
             side=tk.LEFT, fill=tk.X, expand=True)
 
         def add_relay():
