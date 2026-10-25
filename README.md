@@ -143,6 +143,41 @@ ufw allow 8443/tcp
   содержимое зашифровано E2E, но метаданные и сам факт использования Veil
   видны провайдеру сети.
 
+**Уже есть домен и сертификат Let's Encrypt** (например, `zerogg.ru` с
+конфигом в `/etc/letsencrypt/renewal/zerogg.ru.conf`)? Тогда новый
+сертификат не нужен — используйте существующий на порту 8443:
+
+```bash
+# 1. Копируем сертификат туда, где его читает сервис-пользователь veilrelay,
+#    и настраиваем автообновление при certbot renew (deploy-hook):
+sudo cp relay/deploy/certbot-deploy-hook.sh /etc/letsencrypt/renewal-hooks/deploy/veil-relay.sh
+sudo chmod 755 /etc/letsencrypt/renewal-hooks/deploy/veil-relay.sh
+sudo sed -i 's/^CERT_NAME=.*/CERT_NAME="zerogg.ru"/' /etc/letsencrypt/renewal-hooks/deploy/veil-relay.sh
+sudo /etc/letsencrypt/renewal-hooks/deploy/veil-relay.sh   # первичное копирование
+
+# 2. Ставим relay с TLS на 8443, сертификат берём из скопированных файлов:
+sudo VEIL_PORT=8443 \
+     VEIL_TLS_CERT=/var/lib/veil-relay/fullchain.pem \
+     VEIL_TLS_KEY=/var/lib/veil-relay/privkey.pem \
+     bash relay/deploy/install.sh
+
+# 3. Открываем порт и проверяем снаружи:
+sudo ufw allow 8443/tcp
+curl https://zerogg.ru:8443/health    # ожидается {"status": "ok"}
+```
+
+Приватные ключи в `/etc/letsencrypt` читает только root, а relay работает
+от пользователя `veilrelay` — поэтому hook копирует файлы с владельцем
+`veilrelay:veilrelay 0640` и при каждом `certbot renew` сам обновляет
+копию и перезапускает relay (проверка: `sudo certbot renew --dry-run`).
+Клиентам укажите relay как `https://zerogg.ru:8443`.
+
+Если не хотите, чтобы relay отвечал на основном домене — используйте
+поддомен `relay.zerogg.ru`: добавьте A-запись на IP сервера и, если
+сертификат не wildcard, выпустите отдельный
+(`certbot certonly --nginx -d relay.zerogg.ru`, режим зависит от того,
+каким плагином получен основной), и укажите его имя в `CERT_NAME=`.
+
 Альтернатива — реверс-прокси: `sudo VEIL_LOCAL=1 bash relay/deploy/install.sh`
 привяжет relay к 127.0.0.1, а Caddy поставит HTTPS перед ним (`apt install
 caddy`, файл `relay/deploy/Caddyfile`, замените домен на свой). Затем
