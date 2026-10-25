@@ -397,17 +397,19 @@ def main():
     app = build_app()
     scheme = "https" if ssl_ctx else "http"
     prefix = (args.path_prefix or "").rstrip("/")
-    print("Veil relay 0.1.0")
-    print("  listening : %s://%s:%s%s" % (scheme, args.host, args.port, prefix))
-    print("  database  : %s" % os.path.abspath(args.db))
-    print("  retention : %.1f days, inbox cap %d" %
-          (args.retention_days, args.max_inbox))
+    banner = ["Veil relay 0.1.0",
+              "  listening : %s://%s:%s%s" % (scheme, args.host, args.port, prefix),
+              "  database  : %s" % os.path.abspath(args.db),
+              "  retention : %.1f days, inbox cap %d" % (args.retention_days,
+                                                          args.max_inbox)]
+    print("\n".join(banner), flush=True)
     loopback = args.host in ("127.0.0.1", "::1", "localhost")
     if not loopback and not ssl_ctx:
-        print("  ВНИМАНИЕ:relay доступен снаружи БЕЗ TLS (голый HTTP).")
-        print("  Для публичного использования запустите с --tls-cert/--tls-key")
-        print("  (порт 443, сертификат Let's Encrypt) либо поставьте Caddy/nginx")
-        print("  перед relay и привяжите его к 127.0.0.1 (--host 127.0.0.1).")
+        print("  ВНИМАНИЕ:relay доступен снаружи БЕЗ TLS (голый HTTP).\n"
+              "  Для публичного использования запустите с --tls-cert/--tls-key\n"
+              "  (порт 443, сертификат Let's Encrypt) либо поставьте Caddy/nginx\n"
+              "  перед relay и привяжите его к 127.0.0.1 (--host 127.0.0.1).",
+              flush=True)
     # access_log=None: never write user identifiers to any log.
     web.run_app(app, host=args.host, port=args.port, ssl_context=ssl_ctx,
                 access_log=None, print=None)
