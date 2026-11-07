@@ -64,10 +64,12 @@ struct StoredMessage: Codable, Identifiable, Equatable {
     let id: UUID
     let contactId: String
     let incoming: Bool
-    let text: String
+    var text: String
     let ts: Double                  // мс, по часам отправителя
     var delivered: Bool
     let remoteId: String            // MessageInner.i
+    var edited: Bool?               // true, если сообщение изменено
+    var replyTo: String?            // текст, на который отвечает сообщение (цитата)
 }
 
 struct RelayConfig: Codable, Identifiable, Equatable {

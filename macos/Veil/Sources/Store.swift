@@ -194,6 +194,50 @@ final class AppStore: ObservableObject {
         deliverWithFallback(envelope: envelope, remoteId: innerId, contactId: contactId)
     }
 
+    /// Отправка с цитатой (ответ на сообщение). Цитата хранится локально и
+    /// отображается над сообщением; по wire-протоколу v1 передаётся только текст.
+    func sendReply(_ text: String, to contactId: String, replyTo: StoredMessage?) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, identity != nil else { return }
+        let innerId = UUID().uuidString
+        let ts = Date().timeIntervalSince1970 * 1000
+        let inner = MessageInner(i: innerId, t: trimmed, ts: ts, r: enabledRelayURLs)
+        guard let envelope = buildEnvelope(inner: inner, to: contactId) else {
+            lastError = "Не удалось зашифровать сообщение"
+            return
+        }
+        messages.append(StoredMessage(id: UUID(), contactId: contactId, incoming: false,
+                                      text: trimmed, ts: ts, delivered: false,
+                                      remoteId: innerId, edited: nil, replyTo: replyTo?.text))
+        deliverWithFallback(envelope: envelope, remoteId: innerId, contactId: contactId)
+    }
+
+    /// Редактирование сообщения: обновляем текст локально и переотправляем конверт
+    /// с тем же `remoteId`, чтобы получатель обновил текст (см. handleIncoming).
+    func editMessage(_ msg: StoredMessage, to newText: String) {
+        let trimmed = newText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, identity != nil,
+              let idx = messages.firstIndex(where: { $0.id == msg.id }) else { return }
+        messages[idx].text = trimmed
+        messages[idx].edited = true
+        messages[idx].delivered = false
+        let inner = MessageInner(i: msg.remoteId, t: trimmed,
+                                 ts: Date().timeIntervalSince1970 * 1000,
+                                 r: enabledRelayURLs)
+        guard let envelope = buildEnvelope(inner: inner, to: msg.contactId) else { return }
+        deliverWithFallback(envelope: envelope, remoteId: msg.remoteId, contactId: msg.contactId)
+    }
+
+    /// Удаление сообщения из локальной истории собеседника.
+    func deleteMessage(_ msg: StoredMessage) {
+        messages.removeAll { $0.id == msg.id }
+    }
+
+    /// Пересылка текста сообщения в другой чат.
+    func forwardMessage(_ msg: StoredMessage, to contactId: String) {
+        sendMessage(msg.text, to: contactId)
+    }
+
     /// Доставка с запасным путём: сначала relay-адреса контакта (из его
     /// приглашения/последнего сообщения), при неудаче — мои собственные.
     /// Спасает от устаревших адресов: получатель опрашивает свои relay,
@@ -281,8 +325,14 @@ final class AppStore: ObservableObject {
         let chatId = isSelf ? identity.signPubHex : env.sender
 
         // 3. Дедупликация по inner.i (WS push + polling могут доставить дважды).
+        //    Повтор с тем же id, но новым текстом — это редактирование.
         if let idx = messages.firstIndex(where: { $0.remoteId == inner.i && $0.contactId == chatId }) {
-            if !messages[idx].incoming { messages[idx].delivered = true }
+            if !messages[idx].incoming {
+                messages[idx].delivered = true
+            } else if messages[idx].text != inner.t {
+                messages[idx].text = inner.t
+                messages[idx].edited = true
+            }
             return
         }
 

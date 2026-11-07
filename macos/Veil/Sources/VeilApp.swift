@@ -2,6 +2,7 @@ import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.appearance = NSAppearance(named: .darkAqua)
         AppStore.shared.bootstrap()
         RelayService.shared.attach(store: AppStore.shared)
     }
@@ -15,7 +16,8 @@ struct VeilApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(store)
-                .frame(minWidth: 880, minHeight: 600)
+                .preferredColorScheme(.dark)
+                .frame(minWidth: 940, minHeight: 640)
         }
         .commands {
             CommandGroup(after: .newItem) {

@@ -40,9 +40,17 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "build/$APP_NAME" "$APP/Contents/MacOS/$APP_NAME"
 cp Veil/Info.plist "$APP/Contents/Info.plist"
 plutil -lint "$APP/Contents/Info.plist" >/dev/null
+if [[ -f Veil/AppIcon.icns ]]; then
+    cp Veil/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+else
+    echo "(!) AppIcon.icns не найден — приложение без иконки"
+fi
 
 if command -v codesign >/dev/null 2>&1; then
-    codesign --force --sign - "$APP" >/dev/null 2>&1 || true
+    # Убираем FinderInfo/файловые xattrs: иначе codesign падает на ad-hoc подписи
+    # в бандле под iCloud/Documents ("resource fork ... not allowed").
+    xattr -cr "$APP" >/dev/null 2>&1 || true
+    codesign --force --sign - --timestamp=none "$APP" >/dev/null 2>&1
 fi
 
 echo

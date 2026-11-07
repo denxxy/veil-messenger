@@ -1,6 +1,46 @@
 import AppKit
 import SwiftUI
 
+// MARK: - Тёмная карточка
+
+struct VeilCard<Content: View>: View {
+    let title: String?
+    @ViewBuilder var content: Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let title {
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.vText)
+            }
+            content
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.vPanel)
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.white.opacity(0.06), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
+/// Моноширинная плашка ключа/invite на затенённом фоне.
+struct VeilMonoTile: View {
+    let text: String
+    var maxHeight: CGFloat? = nil
+    var body: some View {
+        Text(text)
+            .font(.system(size: 12, design: .monospaced))
+            .foregroundStyle(Color.vText)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(Color.vBg)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .frame(maxHeight: maxHeight)
+    }
+}
+
 // MARK: - Мой профиль
 
 struct ProfileView: View {
@@ -16,71 +56,84 @@ struct ProfileView: View {
     }
 
     var body: some View {
-        Form {
-            Section("Профиль") {
-                TextField("Имя", text: $store.profileName)
-            }
-
-            if let id = store.identity {
-                Section("Идентификация") {
-                    LabeledContent("ID") {
-                        Text(id.signPubHex)
-                            .font(.system(.caption, design: .monospaced))
-                            .lineLimit(2)
-                            .truncationMode(.middle)
-                            .textSelection(.enabled)
-                    }
-                }
-
-                Section("Приглашение") {
-                    Text("Передайте этот код контакту любым каналом (мессенджер, почта, QR). По нему вас смогут добавить и написать — ничего больше.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    ScrollView {
-                        Text(inviteString ?? "")
-                            .font(.system(.caption2, design: .monospaced))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(8)
-                            .background(Color(nsColor: .controlBackgroundColor))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .textSelection(.enabled)
-                    }
-                    .frame(height: 90)
-                    HStack {
-                        Button {
-                            if let s = inviteString {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(s, forType: .string)
-                                copied = true
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
-                                    copied = false
-                                }
-                            }
-                        } label: {
-                            Label(copied ? "Скопировано" : "Скопировать код приглашения",
-                                  systemImage: copied ? "checkmark.circle.fill" : "doc.on.doc")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                if let id = store.identity {
+                    // Герой профиля
+                    HStack(spacing: 16) {
+                        ZStack {
+                            Circle().fill(VeilGradient.brand)
+                                .frame(width: 64, height: 64)
+                                .shadow(color: Color.vAccent.opacity(0.4), radius: 14, y: 6)
+                            Text(initials)
+                                .font(.system(size: 24, weight: .semibold)).foregroundStyle(.white)
                         }
-                        Spacer()
+                        TextField("Имя", text: $store.profileName)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(Color.vText)
+                        if copied { Spacer(); Image(systemName: "checkmark").foregroundStyle(Color.vAccent) }
                     }
-                }
+                    .padding(18)
+                    .background(Color.vPanel)
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(Color.white.opacity(0.06)))
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
 
-                Section("Резервная копия") {
-                    Text("Файл содержит приватные ключи: тот, кто его получит, сможет читать ваши сообщения. Храните его только на надёжных носителях.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    HStack {
-                        Button("Экспортировать личность…") { exportIdentity() }
-                        Button("Импортировать…") { importIdentity() }
+                    VeilCard(title: "Ваш ID") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            VeilMonoTile(text: id.signPubHex)
+                            Button { copyInvite() } label: {
+                                Label(copied ? "Скопировано" : "Скопировать", systemImage: copied ? "checkmark" : "doc.on.doc")
+                                    .font(.system(size: 13, weight: .semibold))
+                            }
+                            .buttonStyle(VeilPrimaryButtonStyle())
+                        }
                     }
-                    if let importError {
-                        Text(importError).font(.caption).foregroundStyle(.red)
+
+                    VeilCard(title: "Код приглашения") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            VeilMonoTile(text: inviteString ?? "", maxHeight: 64)
+                            Button { copyInvite() } label: {
+                                Label(copied ? "Скопировано" : "Скопировать код", systemImage: copied ? "checkmark" : "doc.on.doc")
+                                    .font(.system(size: 13, weight: .semibold))
+                            }
+                            .buttonStyle(VeilPrimaryButtonStyle())
+                        }
+                    }
+
+                    VeilCard(title: "Резервная копия") {
+                        HStack(spacing: 10) {
+                            Button("⇩  Экспортировать личность…") { exportIdentity() }
+                            Button("⇧  Импортировать…") { importIdentity() }
+                        }
+                        .buttonStyle(.bordered)
+                        if let importError {
+                            Text(importError).font(.caption).foregroundStyle(Color.vAccent)
+                        }
                     }
                 }
             }
+            .padding(24)
+            .frame(maxWidth: 680)
         }
-        .formStyle(.grouped)
+        .frame(maxWidth: .infinity)
+        .background(Color.vBgRaised)
         .navigationTitle("Мой профиль")
-        .frame(minWidth: 480)
+    }
+
+    private var initials: String {
+        let n = store.profileName.trimmingCharacters(in: .whitespaces)
+        if n.isEmpty { return "Я" }
+        return String(n.split(separator: " ").prefix(2).compactMap { $0.first }).uppercased()
+    }
+
+    private func copyInvite() {
+        guard let s = inviteString else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(s, forType: .string)
+        copied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { copied = false }
     }
 
     private func exportIdentity() {
@@ -88,13 +141,9 @@ struct ProfileView: View {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
         panel.nameFieldStringValue = "veil-identity-backup.json"
-        panel.message = "Файл содержит приватные ключи — храните его в безопасности."
         if panel.runModal() == .OK, let url = panel.url {
-            do {
-                try data.write(to: url, options: .atomic)
-            } catch {
-                store.lastError = "Не удалось записать файл: \(error.localizedDescription)"
-            }
+            do { try data.write(to: url, options: .atomic) }
+            catch { store.lastError = "Не удалось записать файл: \(error.localizedDescription)" }
         }
     }
 
@@ -126,41 +175,41 @@ struct RelaysView: View {
     @State private var showAdd = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            if store.relays.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "antenna.radiowaves.left.and.right.slash")
-                        .font(.system(size: 44))
-                        .foregroundStyle(.secondary)
-                    Text("Ни одного relay не настроено")
-                        .font(.headline)
-                    Text("Relay — это сервер-посредник: он хранит зашифрованные конверты\nи не может прочитать сообщения. Можно использовать несколько relay,\nвключая собственный на VPS.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                List {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if store.relays.isEmpty {
+                    VStack(spacing: 14) {
+                        Image(systemName: "dot.radiowaves.left.and.right")
+                            .font(.system(size: 42)).foregroundStyle(Color.vAccent)
+                        Text("Ещё нет реле").font(.system(size: 18, weight: .semibold))
+                        Text("Добавьте свой сервер — и переписка заработает")
+                            .font(.system(size: 14)).foregroundStyle(Color.vMuted)
+                        Button { showAdd = true } label: {
+                            Label("Добавить relay", systemImage: "plus")
+                        }
+                        .buttonStyle(VeilPrimaryButtonStyle())
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 70)
+                } else {
                     ForEach(store.relays) { relay in
                         RelayRowView(relay: relay)
                             .contextMenu {
-                                Button("Удалить", role: .destructive) {
-                                    store.removeRelay(relay.id)
-                                }
+                                Button("Удалить", role: .destructive) { store.removeRelay(relay.id) }
                             }
                     }
                 }
             }
+            .padding(24)
+            .frame(maxWidth: 680)
         }
+        .frame(maxWidth: .infinity)
+        .background(Color.vBgRaised)
         .toolbar {
-            Button { showAdd = true } label: {
-                Label("Добавить relay", systemImage: "plus")
-            }
+            Button { showAdd = true } label: { Label("Добавить relay", systemImage: "plus") }
         }
         .sheet(isPresented: $showAdd) { AddRelaySheet() }
         .navigationTitle("Реле-серверы")
-        .frame(minWidth: 480)
     }
 }
 
@@ -169,65 +218,52 @@ struct RelayRowView: View {
     let relay: RelayConfig
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(relay.url)
-                    .font(.system(.body, design: .monospaced))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(colorFor(status: relay.lastStatus))
-                        .frame(width: 7, height: 7)
-                    Text(relay.lastStatus ?? "не проверен")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Button("Проверить") {
-                        let id = relay.id
-                        let url = relay.url
-                        store.setRelayStatus(id, status: "проверка…")
-                        Task {
-                            let ok = await RelayService.shared.health(url)
-                            await MainActor.run {
-                                store.setRelayStatus(id, status: ok ? "онлайн" : "недоступен")
-                            }
-                        }
-                    }
-                    .controlSize(.small)
-                    .buttonStyle(.link)
+        HStack(spacing: 12) {
+            Circle()
+                .fill(relay.lastStatus == "недоступен" ? Color.vMuted : Color.vAccent)
+                .frame(width: 10, height: 10)
+            Text(relay.url)
+                .font(.system(.body, design: .monospaced))
+                .lineLimit(1).truncationMode(.middle)
+                .foregroundStyle(Color.vText)
+            Spacer()
+            Button("Проверить") {
+                let id = relay.id
+                let url = relay.url
+                store.setRelayStatus(id, status: "проверка…")
+                Task {
+                    let ok = await RelayService.shared.health(url)
+                    await MainActor.run { store.setRelayStatus(id, status: ok ? "онлайн" : "недоступен") }
                 }
             }
-            Spacer()
+            .buttonStyle(.bordered).controlSize(.small)
+            .tint(Color.vAccent)
             Toggle("", isOn: Binding(
                 get: { relay.enabled },
                 set: { store.setRelayEnabled(relay.id, $0) }))
                 .toggleStyle(.switch)
                 .labelsHidden()
-                .help("Использовать этот relay")
+                .tint(Color.vAccent)
         }
-        .padding(.vertical, 3)
+        .padding(16)
+        .background(Color.vPanel)
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.white.opacity(0.06)))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .onAppear {
             if relay.lastStatus == nil {
                 let id = relay.id
                 let url = relay.url
                 Task {
                     let ok = await RelayService.shared.health(url)
-                    await MainActor.run {
-                        store.setRelayStatus(id, status: ok ? "онлайн" : "недоступен")
-                    }
+                    await MainActor.run { store.setRelayStatus(id, status: ok ? "онлайн" : "недоступен") }
                 }
             }
         }
     }
-
-    private func colorFor(status: String?) -> Color {
-        switch status {
-        case "онлайн": return .green
-        case "недоступен": return .red
-        default: return .secondary.opacity(0.5)
-        }
-    }
 }
+
+// MARK: - Листы (sheets)
 
 struct AddRelaySheet: View {
     @EnvironmentObject var store: AppStore
@@ -237,33 +273,40 @@ struct AddRelaySheet: View {
     @State private var checking = false
 
     var body: some View {
-        VStack(spacing: 14) {
-            Text("Добавить relay").font(.headline)
+        VStack(spacing: 16) {
+            HStack(spacing: 8) {
+                Image(systemName: "dot.radiowaves.left.and.right").foregroundStyle(Color.vAccent)
+                Text("Добавить relay").font(.headline)
+                Spacer()
+            }
             TextField("https://relay.example.com", text: $url)
-                .textFieldStyle(.roundedBorder)
-                .frame(minWidth: 380)
+                .textFieldStyle(.plain)
+                .font(.system(size: 14, design: .monospaced))
+                .foregroundStyle(Color.vText)
+                .padding(12)
+                .background(Color.vField)
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.12)))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
                 .onSubmit(check)
             if let checkResult {
-                Text(checkResult).font(.caption).foregroundStyle(.secondary)
+                Text(checkResult).font(.system(size: 13)).foregroundStyle(Color.vMuted)
             }
             HStack {
-                Button("Проверить") { check() }
-                    .disabled(url.isEmpty || checking)
+                Button("Проверить") { check() }.disabled(url.isEmpty || checking)
                 Spacer()
+                Button("Отмена") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Добавить") {
-                    if store.addRelay(rawURL: url) {
-                        dismiss()
-                    } else {
-                        checkResult = "Не похоже на адрес"
-                    }
+                    if store.addRelay(rawURL: url) { dismiss() }
+                    else { checkResult = "Не похоже на адрес" }
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(url.isEmpty)
-                .buttonStyle(.borderedProminent)
-                Button("Отмена") { dismiss() }
+                .buttonStyle(VeilPrimaryButtonStyle())
             }
         }
-        .padding(20)
+        .padding(22)
+        .frame(minWidth: 400)
+        .background(Color.vPanel)
     }
 
     private func check() {
@@ -274,13 +317,11 @@ struct AddRelaySheet: View {
             let ok = await RelayService.shared.health(target)
             await MainActor.run {
                 checking = false
-                checkResult = ok ? "✅ отвечает" : "❌ нет ответа (можно добавить и так)"
+                checkResult = ok ? "Отвечает" : "Нет ответа"
             }
         }
     }
 }
-
-// MARK: - Добавление контакта
 
 struct AddContactSheet: View {
     @EnvironmentObject var store: AppStore
@@ -290,42 +331,54 @@ struct AddContactSheet: View {
     private var invite: InvitePayload? { Invite.parse(raw) }
 
     var body: some View {
-        VStack(spacing: 14) {
-            Text("Добавить контакт").font(.headline)
-            Text("Вставьте код приглашения, который вам передал человек")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            TextEditor(text: $raw)
-                .font(.system(.caption, design: .monospaced))
-                .frame(minWidth: 420, minHeight: 90)
-                .border(Color(nsColor: .separatorColor))
+        VStack(spacing: 16) {
+            HStack(spacing: 8) {
+                Image(systemName: "person.crop.circle.badge.plus").foregroundStyle(Color.vAccent)
+                Text("Добавить контакт").font(.headline)
+                Spacer()
+            }
+            TextField("Вставьте код приглашения", text: $raw, axis: .vertical)
+                .lineLimit(4, reservesSpace: true)
+                .font(.system(size: 13, design: .monospaced))
+                .foregroundStyle(Color.vText)
+                .padding(10)
+                .background(Color.vField)
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.12)))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+
             if !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 if let invite {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Имя: \(invite.n.isEmpty ? "—" : invite.n)")
-                        Text("ID: \(invite.s.prefix(16))…")
-                        Text("Реле: \(invite.r.isEmpty ? "не указаны" : invite.r.joined(separator: ", "))")
+                    HStack(spacing: 8) {
+                        VeilAvatar(name: invite.n.isEmpty ? "К" : invite.n, size: 40)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(invite.n.isEmpty ? "Контакт" : invite.n)
+                                .font(.system(size: 15, weight: .semibold))
+                            Text("Готов к переписке")
+                                .font(.system(size: 13)).foregroundStyle(Color.vMuted)
+                        }
+                        Spacer()
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.vAccent)
                     }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+                    .background(Color.vAccent.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 } else {
-                    Text("Код не распознан").font(.caption).foregroundStyle(.red)
+                    Text("Код не распознан").font(.system(size: 13)).foregroundStyle(Color.vAccent)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             HStack {
+                Button("Отмена") { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("Отмена") { dismiss() }
                 Button("Добавить") {
-                    if let invite, store.addContact(invite) {
-                        dismiss()
-                    }
+                    if let invite, store.addContact(invite) { dismiss() }
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(invite == nil)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(VeilPrimaryButtonStyle())
             }
         }
-        .padding(20)
+        .padding(22)
+        .background(Color.vPanel)
     }
 }
